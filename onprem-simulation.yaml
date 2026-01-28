@@ -1,0 +1,147 @@
+Description: "Deploys a simulated On-Premises environment: A separate VPC with an Ubuntu EC2 instance to act as the Customer Gateway (Site-to-Site VPN)."
+
+Parameters:
+  UserIP:
+    Description: Your Public IP for SSH access (CIDR format, e.g., 1.2.3.4/32).
+    Type: String
+    Default: 0.0.0.0/0
+  
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance.
+    Type: AWS::EC2::KeyPair::KeyName
+
+  LatestUbuntuAmi:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+
+Resources:
+  # ==========================================
+  # "On-Prem" VPC (Simulating a datacenter)
+  # ==========================================
+  OnPremVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 192.168.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: on-prem-vpc-sim
+
+  OnPremIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: on-prem-igw
+
+  OnPremIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref OnPremIGW
+      VpcId: !Ref OnPremVPC
+
+  OnPremSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref OnPremVPC
+      CidrBlock: 192.168.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: on-prem-public-subnet
+
+  OnPremRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref OnPremVPC
+      Tags:
+        - Key: Name
+          Value: on-prem-rt
+
+  OnPremDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: OnPremIGWAttachment
+    Properties:
+      RouteTableId: !Ref OnPremRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref OnPremIGW
+
+  OnPremSubnetAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref OnPremRouteTable
+      SubnetId: !Ref OnPremSubnet
+
+  # ==========================================
+  # Security Group (The "Firewall")
+  # ==========================================
+  OnPremSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: ON-PREM-SG
+      GroupDescription: Allow VPN traffic and SSH
+      VpcId: !Ref OnPremVPC
+      SecurityGroupIngress:
+        # SSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref UserIP
+        # IKE (VPN)
+        - IpProtocol: udp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: 0.0.0.0/0
+        # IPsec NAT-T (VPN)
+        - IpProtocol: udp
+          FromPort: 4500
+          ToPort: 4500
+          CidrIp: 0.0.0.0/0
+        # ICMP (Ping)
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  # ==========================================
+  # "Customer Gateway" Instance
+  # ==========================================
+  OnPremInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestUbuntuAmi
+      KeyName: !Ref KeyName
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          GroupSet: 
+            - !Ref OnPremSG
+          SubnetId: !Ref OnPremSubnet
+      SourceDestCheck: false # CRITICAL for routing!
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install -y strongswan
+          echo "StrongSwan installed"
+      Tags:
+        - Key: Name
+          Value: on-prem-vpn-box
+
+Outputs:
+  OnPremPublicIP:
+    Description: Use this IP as the Customer Gateway IP in the Lab Network stack
+    Value: !GetAtt OnPremInstance.PublicIp
+  
+  OnPremInstanceId:
+    Value: !Ref OnPremInstance
+  
+  SSHCommand:
+    Description: Command to connect to the On-Prem box
+    Value: !Sub "ssh -i ${KeyName}.pem ubuntu@${OnPremInstance.PublicIp}"

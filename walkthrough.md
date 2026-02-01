@@ -82,22 +82,35 @@ Wait until it returns **`CREATE_COMPLETE`** before proceeding.
     1..10 | ForEach-Object { curl -s http://<LoadBalancerDNS> | Select-String "Hello" }
     ```
 
-2.  **Test Database Access (Bastion):**
-    First, SSH into the Bastion (using **Agent Forwarding** to pass your key), then hop to an App server to test the RDS connection.
+2.  **Test Database Access (SSM Session Manager):**
+    We use AWS Systems Manager to securely connect to the private App instances without needing SSH keys or a Bastion host.
+
+    **Get the Connection Details:**
+    ```powershell
+    # Get the App Instance ID
+    aws cloudformation describe-stacks --stack-name lab-network --query "Stacks[0].Outputs[?OutputKey=='AppInstance1Id'].OutputValue" --output text --no-cli-pager
+
+    # Get the RDS Endpoint
+    aws cloudformation describe-stacks --stack-name lab-network --query "Stacks[0].Outputs[?OutputKey=='DBEndpoint'].OutputValue" --output text --no-cli-pager
+    ```
+
+    **Start a Session & Test RDS:**
     ```bash
-    # From your local machine (ensure your key is added to ssh-agent)
-    ssh -A ec2-user@<BastionPublicIP>
+    # 1. Connect to the instance
+    aws ssm start-session --target <AppInstance1Id>
     
-    # From Bastion
-    ssh ec2-user@<AppInstancePrivateIP>
+    # 2. Inside the session, get the DB password from Secrets Manager
+    # (The instance has an IAM role that allows this)
+    DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id lab-db-secret --query SecretString --output text | jq -r .password)
     
-    # From App Instance (Test RDS)
+    # 3. Connect to the database using the retrieved password
+    export PGPASSWORD=$DB_PASSWORD
     psql -h <DBEndpoint> -U labadmin -d postgres
     ```
 
     **Success Criteria:**
-    - You see `Hello from ip-10-10-x-x... in AZ-A` then `AZ-B`.
-    - You successfully log into the database from an **App Instance** and see the `postgres=>` prompt.
+    - You see `Hello from ip-10-10-x-x... in AZ-A` then `AZ-B` in your browser.
+    - You successfully log into the database via SSM and see the `postgres=>` prompt.
 
 ## 4. Configure the VPN Connection (Manual Steps)
 *Goal: Configure the "On-Prem" router to "dial" the AWS VPN.*

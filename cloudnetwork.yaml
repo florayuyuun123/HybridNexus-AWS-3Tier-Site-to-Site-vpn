@@ -299,9 +299,9 @@ Resources:
           ToPort: 80
           SourceSecurityGroupId: !Ref ALBSecurityGroup
         - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          SourceSecurityGroupId: !Ref BastionSecurityGroup
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref APPSecurityGroup
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
@@ -415,6 +415,7 @@ Resources:
       SubnetId: !Ref AppSubnet1
       SecurityGroupIds:
         - !Ref APPSecurityGroup
+      IamInstanceProfile: !Ref AppInstanceProfile
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -441,6 +442,7 @@ Resources:
       SubnetId: !Ref AppSubnet2
       SecurityGroupIds:
         - !Ref APPSecurityGroup
+      IamInstanceProfile: !Ref AppInstanceProfile
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -533,6 +535,17 @@ Resources:
         - !Ref DBSubnet1
         - !Ref DBSubnet2
 
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}-db-secret
+      Description: Database credentials for Lab RDS
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "labadmin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
   DBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -543,7 +556,7 @@ Resources:
       AllocatedStorage: 20
       DBName: postgres
       MasterUsername: labadmin
-      MasterUserPassword: ChangeMe123!
+      MasterUserPassword: !Join ["", ["{{resolve:secretsmanager:", !Ref DBSecret, ":SecretString:password}}"]]
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
@@ -600,6 +613,63 @@ Resources:
         - !Ref AppSubnet2
       SecurityGroupIds:
         - !Ref APPSecurityGroup
+
+  SSMMessagesInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref AppSubnet1
+        - !Ref AppSubnet2
+      SecurityGroupIds:
+        - !Ref APPSecurityGroup
+
+  EC2MessagesInterfaceEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref AppSubnet1
+        - !Ref AppSubnet2
+      SecurityGroupIds:
+        - !Ref APPSecurityGroup
+
+  # ==========================================
+  # IAM Role for Session Manager
+  # ==========================================
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: SecretAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DBSecret
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
 
   # ==========================================
   # Observability (Step 9)
@@ -662,3 +732,9 @@ Outputs:
   BastionPublicIP:
     Description: Public IP of the Bastion Host
     Value: !GetAtt BastionInstance.PublicIp
+  AppInstance1Id:
+    Description: Instance ID of App Server 1
+    Value: !Ref AppInstance1
+  AppInstance2Id:
+    Description: Instance ID of App Server 2
+    Value: !Ref AppInstance2

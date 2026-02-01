@@ -1,4 +1,5 @@
-# Secure Hybrid 3-Tier Web Application Hub
+# Building a Real-World AWS Networking Lab: VPC, Private Subnets, and Site-to-Site VPN
+## Implementing SSM Session Manager and AWS Secrets Manager for an Enterprise-Grade Security Profile
 
 This guide documents the successful deployment of a production-ready 3-tier architecture with a Site-to-Site VPN Simulation.
 
@@ -215,8 +216,19 @@ Once connected to the RDS Postgres instance (`postgres=>`), use these commands t
 | `\conninfo` | Show current connection details (IP/SSL). |
 | `SELECT version();` | Check Postgres server version. |
 | `\q` | Quit the database. |
+| `\dt` | List all tables in the current database. |
 
-## 6. Cleanup
+## 6. Best Practices & Recommendations
+Based on the implementation of this lab, here are several "Production-Ready" recommendations:
+
+1.  **Embrace Zero-SSH:** Moving from Bastion/SSH to **SSM Session Manager** significantly reduces your attack surface. Ensure all future management is done via SSM.
+2.  **Cost Optimization:**
+    *   **NAT Gateway:** While required for initial setup, it is the most expensive "idle" resource. Consider using a **Golden AMI** to eliminate the need for an outbound NAT Gateway entirely.
+    *   **Endpoint Audit:** Always remove Interface Endpoints (like Secrets Manager) if your application logic doesn't actively use them to save ~$7/mo.
+3.  **Dynamic Secrets:** Never hardcode passwords. The integration with **AWS Secrets Manager** in this project ensures that credentials are randomized and retrieved securely at runtime.
+4.  **Logging & Visibility:** Ensure **VPC Flow Logs** are active to audit all traffic crossing your hybrid boundary (Site-to-Site VPN).
+
+## 7. Cleanup
 *Goal: Remove resources to stop billing.*
 
 ```powershell

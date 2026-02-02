@@ -50,9 +50,9 @@ aws cloudformation describe-stacks --stack-name lab-onprem --query "Stacks[0].Ou
 This stack deploys the main VPC (`10.10.0.0/16`), Subnets, ALB, Bastion, App instances, and a Postgres RDS database.
 
 **Command (PowerShell):**
-*Replace `34.200.235.113` with the IP you copied above and `argo-key-pair` with your key name.*
+*Replace `34.200.235.113` with the IP you copied above and `your-key-pair` with your key name.*
 ```powershell
-aws cloudformation create-stack --stack-name lab-network --template-body file://cloudnetwork.yaml --parameters ParameterKey=EnvironmentName,ParameterValue=lab ParameterKey=KeyName,ParameterValue=argo-key-pair ParameterKey=OnPremPublicIP,ParameterValue=34.200.222.242 ParameterKey=OnPremCIDR,ParameterValue=192.168.1.0/24 ParameterKey=UserIP,ParameterValue=0.0.0.0/0 --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name lab-network --template-body file://cloudnetwork.yaml --parameters ParameterKey=EnvironmentName,ParameterValue=lab ParameterKey=KeyName,ParameterValue=<your-key-pair> ParameterKey=OnPremPublicIP,ParameterValue=34.200.235.113 ParameterKey=OnPremCIDR,ParameterValue=192.168.1.0/24 ParameterKey=UserIP,ParameterValue=0.0.0.0/0 --capabilities CAPABILITY_NAMED_IAM
 ```
 *(Note: If the stack already exists, use `update-stack` instead.)*
 
@@ -96,10 +96,13 @@ Wait until it returns **`CREATE_COMPLETE`** before proceeding.
     ```
 
     **Start a Session & Test RDS:**
+
     ```bash
     # 1. Connect to the instance
     aws ssm start-session --target <AppInstance1Id>
-    
+
+    **Note on CLI Access:** If the `aws ssm start-session` command fails locally (due to a missing Session Manager plugin), you can connect directly through the **AWS Management Console**
+
     # 2. Inside the session, get the DB password from Secrets Manager
     # (The instance has an IAM role that allows this)
     DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id lab-db-secret --query SecretString --output text | jq -r .password)

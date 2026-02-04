@@ -22,10 +22,6 @@ Parameters:
     Type: String
     Default: 192.168.1.0/24
 
-  UserIP:
-    Description: Your Public IP for Bastion SSH access (CIDR format, e.g., 1.2.3.4/32)
-    Type: String
-    Default: 0.0.0.0/0
   
   KeyName:
     Description: KeyPair for SSH access
@@ -338,44 +334,10 @@ Resources:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
 
-  BastionSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: BASTION-SG
-      GroupDescription: Allow SSH from User IP
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref UserIP
-        - IpProtocol: icmp
-          FromPort: -1
-          ToPort: -1
-          CidrIp: !Ref OnPremCIDR
-        - IpProtocol: icmp
-          FromPort: -1
-          ToPort: -1
-          CidrIp: !Ref UserIP
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
 
   # ==========================================
   # Compute Tier (Step 4 & 5)
   # ==========================================
-  BastionInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: t3.micro
-      ImageId: !Ref LatestAmazonLinuxAmi
-      KeyName: !Ref KeyName
-      SubnetId: !Ref PublicSubnet1
-      SecurityGroupIds:
-        - !Ref BastionSecurityGroup
-      Tags:
-        - Key: Name
-          Value: !Sub ${EnvironmentName}-bastion
 
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -734,9 +696,6 @@ Outputs:
   DBEndpoint:
     Description: Use this address to connect to your database
     Value: !GetAtt DBInstance.Endpoint.Address
-  BastionPublicIP:
-    Description: Public IP of the Bastion Host
-    Value: !GetAtt BastionInstance.PublicIp
   AppInstance1Id:
     Description: Instance ID of App Server 1
     Value: !Ref AppInstance1

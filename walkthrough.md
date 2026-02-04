@@ -47,12 +47,12 @@ aws cloudformation describe-stacks --stack-name lab-onprem --query "Stacks[0].Ou
 ## 2. Deploy the Lab Network (VPN Side)
 *Goal: Provision the AWS environment with a full 3-tier application stack and VPN gateway.*
 
-This stack deploys the main VPC (`10.10.0.0/16`), Subnets, ALB, Bastion, App instances, and a Postgres RDS database.
+This stack deploys the main VPC (`10.10.0.0/16`), Subnets, ALB, App instances, and a Postgres RDS database.
 
 **Command (PowerShell):**
 *Replace `34.200.235.113` with the IP you copied above and `your-key-pair` with your key name.*
 ```powershell
-aws cloudformation create-stack --stack-name lab-network --template-body file://cloudnetwork.yaml --parameters ParameterKey=EnvironmentName,ParameterValue=lab ParameterKey=KeyName,ParameterValue=<your-key-pair> ParameterKey=OnPremPublicIP,ParameterValue=34.200.235.113 ParameterKey=OnPremCIDR,ParameterValue=192.168.1.0/24 ParameterKey=UserIP,ParameterValue=0.0.0.0/0 --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name lab-network --template-body file://cloudnetwork.yaml --parameters ParameterKey=EnvironmentName,ParameterValue=lab ParameterKey=KeyName,ParameterValue=<your-key-pair> ParameterKey=OnPremPublicIP,ParameterValue=34.200.235.113 ParameterKey=OnPremCIDR,ParameterValue=192.168.1.0/24 --capabilities CAPABILITY_NAMED_IAM
 ```
 *(Note: If the stack already exists, use `update-stack` instead.)*
 
@@ -84,7 +84,7 @@ Wait until it returns **`CREATE_COMPLETE`** before proceeding.
     ```
 
 2.  **Test Database Access (SSM Session Manager):**
-    We use AWS Systems Manager to securely connect to the private App instances without needing SSH keys or a Bastion host.
+    We use AWS Systems Manager to securely connect to the private App instances without needing open ports or a Bastion host.
 
     **Get the Connection Details:**
     ```powershell
@@ -224,7 +224,7 @@ Once connected to the RDS Postgres instance (`postgres=>`), use these commands t
 ## 6. Best Practices & Recommendations
 Based on the implementation of this lab, here are several "Production-Ready" recommendations:
 
-1.  **Embrace Zero-SSH:** Moving from Bastion/SSH to **SSM Session Manager** significantly reduces your attack surface. Ensure all future management is done via SSM.
+1.  **Embrace Zero-SSH:** Moving from Bastion/SSH to **SSM Session Manager** significantly reduces your attack surface.
 2.  **Cost Optimization:**
     *   **NAT Gateway:** While required for initial setup, it is the most expensive "idle" resource. Consider using a **Golden AMI** to eliminate the need for an outbound NAT Gateway entirely.
     *   **Endpoint Audit:** Always remove Interface Endpoints (like Secrets Manager) if your application logic doesn't actively use them to save ~$7/mo.

@@ -27,6 +27,21 @@ This guide covers common issues and solutions encountered during the deployment 
     sudo sysctl -w net.ipv4.conf.ens5.rp_filter=0 # Replace ens5 with your interface
     ```
 
+### VPN is "UP" but Ping Still Fails (Missing Route Propagation)
+*   **Symptom**: `sudo ipsec status` shows `ESTABLISHED`, `rp_filter` is disabled, but ping from on-prem to AWS private IPs still gets 100% packet loss in both directions.
+*   **Cause**: The AWS App and/or DB route tables are missing the propagated route to `192.168.1.0/24` (on-prem CIDR). This happens because `AWS::EC2::VPNGatewayRoutePropagation` silently ignores multiple `RouteTableIds` entries — only the first one gets propagation applied.
+*   **Diagnosis**: Check if `192.168.1.0/24` appears in the App route table:
+    ```bash
+    aws ec2 describe-route-tables --route-table-ids <app-rt-id> \
+      --query "RouteTables[*].Routes[?DestinationCidrBlock=='192.168.1.0/24']" --output table
+    ```
+*   **Fix**: Enable propagation manually for each missing route table:
+    ```bash
+    aws ec2 enable-vgw-route-propagation --route-table-id <app-rt-id> --gateway-id <vgw-id>
+    aws ec2 enable-vgw-route-propagation --route-table-id <db-rt-id> --gateway-id <vgw-id>
+    ```
+*   **Permanent Fix**: In CloudFormation, use a **separate** `AWS::EC2::VPNGatewayRoutePropagation` resource for each route table — do not list multiple `RouteTableIds` in a single resource.
+
 ### Missing IP Forwarding
 *   **Symptom**: Traffic cannot traverse the VPN instance to reach internal subnets.
 *   **Fix**: Enable IPv4 forwarding:

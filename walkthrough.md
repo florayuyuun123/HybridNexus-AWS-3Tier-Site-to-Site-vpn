@@ -100,14 +100,21 @@ Wait until it returns **`CREATE_COMPLETE`** before proceeding.
     ```bash
     # 1. Connect to the instance
     aws ssm start-session --target <AppInstance1Id>
+    ```
 
-    **Note on CLI Access:** If the `aws ssm start-session` command fails locally (due to a missing Session Manager plugin), you can connect directly through the **AWS Management Console**
+    > [!NOTE]
+    > If `aws ssm start-session` fails locally due to a missing Session Manager plugin, connect directly through the **AWS Management Console**: EC2 > Instances > Select Instance > Connect > Session Manager.
 
-    # 2. Inside the session, get the DB password from Secrets Manager
+    ```bash
+    # 2. Inside the session, install psql if not present (Amazon Linux 2023)
+    sudo dnf install -y postgresql15
+
+    # 3. Get the DB password from Secrets Manager
     # (The instance has an IAM role that allows this)
     DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id lab-db-secret --query SecretString --output text | jq -r .password)
-    
-    # 3. Connect to the database using the retrieved password
+    echo $DB_PASSWORD  # Verify the password was retrieved
+
+    # 4. Connect to the database using the retrieved password
     export PGPASSWORD=$DB_PASSWORD
     psql -h <DBEndpoint> -U labadmin -d postgres
     ```
@@ -194,17 +201,25 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
 ## 5. Final Verification
 *Goal: Prove that traffic can pass privately and securely across the hybrid boundary.*
 
-1.  **Ping from On-Prem to AWS:**
+1.  **Disable Reverse Path Filtering on the on-prem instance** (required for asymmetric VPN routing):
+    ```bash
+    sudo sysctl -w net.ipv4.conf.all.rp_filter=0
+    sudo sysctl -w net.ipv4.conf.default.rp_filter=0
+    sudo sysctl -w net.ipv4.conf.ens5.rp_filter=0  # Replace ens5 with your interface
+    ```
+
+2.  **Ping from On-Prem to AWS:**
     From your **On-Prem** EC2, ping the private IP of an App Instance or the RDS Database.
     ```bash
     ping <AppInstancePrivateIP>
     ping <DB_IP_Address>  # (e.g., 10.10.20.x)
     ```
 
-2.  **Access Database from On-Prem:**
+3.  **Access Database from On-Prem:**
     Test the direct database connection over the VPN tunnel:
     ```bash
-    # install client if needed: sudo apt update && sudo apt install postgresql-client -y
+    # install client if needed
+    sudo apt update && sudo apt install -y postgresql-client
     psql -h <DBEndpoint> -U labadmin -d postgres
     ```
 **Success:** A reply and a successful login confirm the "Company Problem" is solved: Secure, private hybrid connectivity is fully operational.

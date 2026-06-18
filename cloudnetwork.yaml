@@ -488,6 +488,13 @@ Resources:
     Properties:
       RouteTableIds:
         - !Ref AppRouteTable
+      VpnGatewayId: !Ref VPNGateway
+
+  DBRoutePropagation:
+    Type: AWS::EC2::VPNGatewayRoutePropagation
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableIds:
         - !Ref DBRouteTable
       VpnGatewayId: !Ref VPNGateway
 

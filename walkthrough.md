@@ -169,7 +169,7 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
         keylife=1h
     conn Tunnel2
         type=tunnel
-        auto=start
+        auto=add
         keyexchange=ikev1
         authby=secret
         left=%defaultroute
@@ -190,6 +190,29 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
     <ON_PREM_PUBLIC_IP> <TUNNEL1_AWS_IP> : PSK "<TUNNEL1_PSK>"
     <ON_PREM_PUBLIC_IP> <TUNNEL2_AWS_IP> : PSK "<TUNNEL2_PSK>"
     EOF'
+    ```
+
+    **Step 4c: Enable Automatic Failover (Monitor Script)**
+    Because this is a Policy-Based VPN, having both tunnels active simultaneously with the same subnets can cause routing conflicts in Linux. To achieve automatic failover, we can run a cron job that monitors Tunnel 1 and automatically brings up Tunnel 2 if Tunnel 1 goes down.
+    
+    ```bash
+    sudo bash -c 'cat > /usr/local/bin/vpn-failover.sh <<"EOF"
+    #!/bin/bash
+    # Check if Tunnel 1 is currently established
+    if ! sudo ipsec status Tunnel1 | grep -q "ESTABLISHED"; then
+        # Tunnel 1 is down, bring up Tunnel 2
+        sudo ipsec up Tunnel2
+    else
+        # Tunnel 1 is up. If Tunnel 2 is also up, bring it down to prevent conflicts
+        if sudo ipsec status Tunnel2 | grep -q "ESTABLISHED"; then
+             sudo ipsec down Tunnel2
+        fi
+    fi
+    EOF'
+    sudo chmod +x /usr/local/bin/vpn-failover.sh
+
+    # Add to root's crontab to run every minute
+    sudo bash -c '(crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/vpn-failover.sh") | crontab -'
     ```
 
 4.  **Restart & Verify:**

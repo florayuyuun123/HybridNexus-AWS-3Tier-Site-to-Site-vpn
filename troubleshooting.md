@@ -33,6 +33,15 @@ This guide covers common issues and solutions encountered during the deployment 
     sudo sysctl -w net.ipv4.conf.ens5.rp_filter=0 # Replace ens5 with your interface
     ```
 
+### VPN is "UP" but Ping Fails (Overlapping IPsec Policies)
+*   **Symptom**: `sudo ipsec status` shows BOTH tunnels as `ESTABLISHED` and `INSTALLED`, but `ping 10.x.x.x` results in 100% packet loss.
+*   **Cause**: In strongSwan, if both redundant tunnels are set to `auto=start` with identical subnets, the Linux kernel gets two overlapping XFRM encryption policies. This confuses the routing engine, which either drops the traffic or sends it to the wrong SA.
+*   **Fix**: Bring down the second tunnel temporarily to clear the duplicate SA:
+    ```bash
+    sudo ipsec down Tunnel2
+    ```
+*   **Permanent Fix**: In `/etc/ipsec.conf`, change `auto=start` to `auto=add` for `Tunnel2`. This tells strongSwan to keep the configuration ready but only establish `Tunnel1` actively.
+
 ### VPN is "UP" but Ping Still Fails (Missing Route Propagation)
 *   **Symptom**: `sudo ipsec status` shows `ESTABLISHED`, `rp_filter` is disabled, but ping from on-prem to AWS private IPs still gets 100% packet loss in both directions.
 *   **Cause**: The AWS App and/or DB route tables are missing the propagated route to `192.168.1.0/24` (on-prem CIDR). This happens because `AWS::EC2::VPNGatewayRoutePropagation` silently ignores multiple `RouteTableIds` entries — only the first one gets propagation applied.

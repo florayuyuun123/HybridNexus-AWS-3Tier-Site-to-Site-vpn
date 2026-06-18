@@ -3,6 +3,9 @@
 This guide covers common issues and solutions encountered during the deployment and verification of the AWS/On-Prem hybrid lab.
 
 ## 1. AWS CloudFormation Deployment
+
+> **Note:** The provided `cloudnetwork.yaml` template already incorporates the fix below. This is provided for reference if you are writing your own templates.
+
 ### Circular Dependency Error
 *   **Symptom**: `An error occurred (ValidationError) when calling the CreateStack operation: Circular dependency between resources...`
 *   **Cause**: This usually happens when a Security Group (SG) has an ingress rule referencing itself or another resource that in turn references the SG.
@@ -17,6 +20,9 @@ This guide covers common issues and solutions encountered during the deployment 
     2.  **OR** use the **AWS Management Console**: Navigate to EC2 > Instances > Select Instance > Connect > Session Manager.
 
 ## 3. Site-to-Site VPN Connectivity
+
+> **Note:** If you deploy using the latest `onprem-simulation.yaml` and `cloudnetwork.yaml` templates, the routing, IP forwarding, and route propagation issues below are automatically resolved during deployment. These steps remain here for reference in case you build the architecture manually.
+
 ### VPN is "UP" but Ping Fails (Asymmetric Routing)
 *   **Symptom**: `sudo ipsec status` shows `ESTABLISHED`, but `ping 10.x.x.x` results in 100% packet loss.
 *   **Cause**: Traffic is exiting via one VPN tunnel and returning via the other. Linux drops these packets by default due to Reverse Path Filtering (`rp_filter`).

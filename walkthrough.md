@@ -201,22 +201,7 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
 ## 5. Final Verification
 *Goal: Prove that traffic can pass privately and securely across the hybrid boundary.*
 
-1.  **Disable Reverse Path Filtering and enable IP Forwarding on the on-prem instance** (required for VPN traffic to flow correctly):
-    ```bash
-    sudo sysctl -w net.ipv4.ip_forward=1
-    sudo sysctl -w net.ipv4.conf.all.rp_filter=0
-    sudo sysctl -w net.ipv4.conf.default.rp_filter=0
-    sudo sysctl -w net.ipv4.conf.ens5.rp_filter=0  # Replace ens5 with your interface
-    ```
-    Make it permanent so it survives reboots:
-    ```bash
-    echo "net.ipv4.ip_forward = 1
-    net.ipv4.conf.all.rp_filter = 0
-    net.ipv4.conf.default.rp_filter = 0
-    net.ipv4.conf.ens5.rp_filter = 0" | sudo tee /etc/sysctl.d/99-vpn.conf
-    ```
-
-2.  **Get App Instance Private IP (run from your local machine):**
+1.  **Get App Instance Private IP (run from your local machine):**
     ```powershell
     aws cloudformation describe-stacks --stack-name lab-network --query "Stacks[0].Outputs[?OutputKey=='AppInstance1Id'].OutputValue" --output text --no-cli-pager
     ```
@@ -225,21 +210,21 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
     aws ec2 describe-instances --instance-ids <AppInstance1Id> --query "Reservations[*].Instances[*].PrivateIpAddress" --output text
     ```
 
-3.  **Get DB Private IP (run from on-prem instance):**
+2.  **Get DB Private IP (run from on-prem instance):**
     RDS does not expose a static private IP — resolve it from the DNS endpoint:
     ```bash
     dig +short <DBEndpoint>
     ```
     Use the returned IP (e.g., `10.10.20.5`) for ping testing only. Always use the DNS endpoint for actual connections.
 
-4.  **Ping from On-Prem to AWS:**
-    Wait **30-90 seconds** after running the sysctl commands above before testing — the VPN tunnel and route propagation need time to settle.
+3.  **Ping from On-Prem to AWS:**
+    Wait **30-90 seconds** after strongSwan is configured before testing — the VPN tunnel and route propagation need time to settle.
     ```bash
     ping <AppInstancePrivateIP>
     ping <DB_Private_IP>
     ```
 
-5.  **Access Database from On-Prem:**
+4.  **Access Database from On-Prem:**
     Test the direct database connection over the VPN tunnel:
     ```bash
     # Install psql client if needed

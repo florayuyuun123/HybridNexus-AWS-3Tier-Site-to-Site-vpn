@@ -43,10 +43,18 @@ This guide covers common issues and solutions encountered during the deployment 
 *   **Permanent Fix**: In CloudFormation, use a **separate** `AWS::EC2::VPNGatewayRoutePropagation` resource for each route table — do not list multiple `RouteTableIds` in a single resource.
 
 ### Missing IP Forwarding
-*   **Symptom**: Traffic cannot traverse the VPN instance to reach internal subnets.
+*   **Symptom**: `rp_filter` is disabled and VPN is `ESTABLISHED` but ping still gets 100% packet loss.
+*   **Cause**: IP forwarding is disabled by default on new EC2 instances. Without it, the instance drops packets that need to be forwarded through the VPN tunnel.
 *   **Fix**: Enable IPv4 forwarding:
     ```bash
     sudo sysctl -w net.ipv4.ip_forward=1
+    ```
+*   **Make it permanent** (survives reboots):
+    ```bash
+    echo "net.ipv4.ip_forward = 1
+    net.ipv4.conf.all.rp_filter = 0
+    net.ipv4.conf.default.rp_filter = 0
+    net.ipv4.conf.ens5.rp_filter = 0" | sudo tee /etc/sysctl.d/99-vpn.conf
     ```
 
 ## 4. Database Access (PostgreSQL)

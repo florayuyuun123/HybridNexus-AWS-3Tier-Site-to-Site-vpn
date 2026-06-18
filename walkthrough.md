@@ -31,7 +31,7 @@ This stack deploys a separate VPC (`192.168.0.0/16`) and an Ubuntu EC2 instance 
 
 **Command (PowerShell):**
 ```powershell
-aws cloudformation create-stack --stack-name lab-onprem --template-body file://onprem-simulation.yaml --parameters ParameterKey=KeyName,ParameterValue=argo-key-pair --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation create-stack --stack-name lab-onprem --template-body file://onprem-simulation.yaml --parameters ParameterKey=KeyName,ParameterValue=<your-key-pair> --capabilities CAPABILITY_NAMED_IAM
 ```
 
 **Why this step?**  
@@ -135,7 +135,7 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
 
 2.  **SSH into your "On-Prem" EC2:**
     ```bash
-    ssh -i argo-key-pair.pem ubuntu@<ON_PREM_PUBLIC_IP>
+    ssh -i <your-key-pair>.pem ubuntu@<ON_PREM_PUBLIC_IP>
     ```
 
 3.  **Update strongSwan Config:**
@@ -201,25 +201,53 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
 ## 5. Final Verification
 *Goal: Prove that traffic can pass privately and securely across the hybrid boundary.*
 
-1.  **Disable Reverse Path Filtering on the on-prem instance** (required for asymmetric VPN routing):
+1.  **Disable Reverse Path Filtering and enable IP Forwarding on the on-prem instance** (required for VPN traffic to flow correctly):
     ```bash
+    sudo sysctl -w net.ipv4.ip_forward=1
     sudo sysctl -w net.ipv4.conf.all.rp_filter=0
     sudo sysctl -w net.ipv4.conf.default.rp_filter=0
     sudo sysctl -w net.ipv4.conf.ens5.rp_filter=0  # Replace ens5 with your interface
     ```
-
-2.  **Ping from On-Prem to AWS:**
-    From your **On-Prem** EC2, ping the private IP of an App Instance or the RDS Database.
+    Make it permanent so it survives reboots:
     ```bash
-    ping <AppInstancePrivateIP>
-    ping <DB_IP_Address>  # (e.g., 10.10.20.x)
+    echo "net.ipv4.ip_forward = 1
+    net.ipv4.conf.all.rp_filter = 0
+    net.ipv4.conf.default.rp_filter = 0
+    net.ipv4.conf.ens5.rp_filter = 0" | sudo tee /etc/sysctl.d/99-vpn.conf
     ```
 
-3.  **Access Database from On-Prem:**
+2.  **Get App Instance Private IP (run from your local machine):**
+    ```powershell
+    aws cloudformation describe-stacks --stack-name lab-network --query "Stacks[0].Outputs[?OutputKey=='AppInstance1Id'].OutputValue" --output text --no-cli-pager
+    ```
+    Then get the private IP:
+    ```powershell
+    aws ec2 describe-instances --instance-ids <AppInstance1Id> --query "Reservations[*].Instances[*].PrivateIpAddress" --output text
+    ```
+
+3.  **Get DB Private IP (run from on-prem instance):**
+    RDS does not expose a static private IP — resolve it from the DNS endpoint:
+    ```bash
+    dig +short <DBEndpoint>
+    ```
+    Use the returned IP (e.g., `10.10.20.5`) for ping testing only. Always use the DNS endpoint for actual connections.
+
+4.  **Ping from On-Prem to AWS:**
+    Wait **30-90 seconds** after running the sysctl commands above before testing — the VPN tunnel and route propagation need time to settle.
+    ```bash
+    ping <AppInstancePrivateIP>
+    ping <DB_Private_IP>
+    ```
+
+5.  **Access Database from On-Prem:**
     Test the direct database connection over the VPN tunnel:
     ```bash
-    # install client if needed
+    # Install psql client if needed
     sudo apt update && sudo apt install -y postgresql-client
+
+    # Connect using the DNS endpoint (not the IP)
+    DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id lab-db-secret --query SecretString --output text | jq -r .password)
+    export PGPASSWORD=$DB_PASSWORD
     psql -h <DBEndpoint> -U labadmin -d postgres
     ```
 **Success:** A reply and a successful login confirm the "Company Problem" is solved: Secure, private hybrid connectivity is fully operational.

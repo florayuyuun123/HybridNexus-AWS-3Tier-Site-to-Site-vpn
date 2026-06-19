@@ -221,6 +221,19 @@ AWS is ready and waiting. Now we must tell the strongSwan software how to connec
     sudo ipsec status
     ```
 
+    **Step 4d: Test the Failover**
+    To ensure the automatic failover script works correctly, simulate a failure of Tunnel 1:
+    ```bash
+    # 1. Bring down Tunnel 1 manually
+    sudo ipsec down Tunnel1
+
+    # 2. Run the failover script (or wait 1 minute for cron)
+    sudo /usr/local/bin/vpn-failover.sh
+
+    # 3. Verify Tunnel 2 is now ESTABLISHED
+    sudo ipsec status
+    ```
+
 ## 5. Final Verification
 *Goal: Prove that traffic can pass privately and securely across the hybrid boundary.*
 

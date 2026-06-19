@@ -386,12 +386,49 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update and Install Nginx
+          # Update and Install Nginx + Git + jq
           dnf update -y
-          dnf install -y nginx
+          dnf install -y nginx git jq
           systemctl enable nginx
           systemctl start nginx
-          echo "Hello from $(hostname -f) in AZ-A" > /usr/share/nginx/html/index.html
+
+          # Retrieve GitHub PAT from Secrets Manager
+          GITHUB_TOKEN=$(aws secretsmanager get-secret-value \
+            --secret-id lab-github-token \
+            --region ${AWS::Region} \
+            --query SecretString \
+            --output text | jq -r .token)
+
+          # Deploy website from private GitHub repo
+          REPO_URL="https://${!GITHUB_TOKEN}@github.com/ms-solutions-app/edu-app.git"
+          CLONE_DIR="/tmp/edu-app"
+          WEB_ROOT="/usr/share/nginx/html"
+
+          git clone "$REPO_URL" "$CLONE_DIR"
+
+          if [ $? -eq 0 ]; then
+            # Find the directory containing index.html (handles repos with a subfolder)
+            HTML_DIR=$(find "$CLONE_DIR" -name "index.html" -not -path "*/node_modules/*" | head -1 | xargs dirname)
+            if [ -n "$HTML_DIR" ]; then
+              rm -rf "$WEB_ROOT"/*
+              cp -r "$HTML_DIR"/* "$WEB_ROOT"/
+              chown -R nginx:nginx "$WEB_ROOT"
+
+              # Inject AZ/IP identification banner into index.html
+              PRIVATE_IP=$(hostname -I | awk '{print $1}')
+              BANNER='<div style="position:fixed;bottom:16px;right:16px;background:rgba(0,0,0,0.75);color:#fff;font-family:monospace;font-size:13px;padding:10px 16px;border-radius:8px;z-index:9999;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.15)">&#128994; Served by: <strong>'"$PRIVATE_IP"'</strong> &nbsp;|&nbsp; AZ: <strong>AZ-A</strong></div>'
+              sed -i "s|</body>|$BANNER</body>|I" "$WEB_ROOT"/index.html
+            else
+              echo "<h1>Deploy Error: index.html not found in repo</h1><p>Instance: $(hostname -f) | AZ-A</p>" > "$WEB_ROOT"/index.html
+            fi
+          else
+            echo "<h1>Deploy Error: Failed to clone repo</h1><p>Instance: $(hostname -f) | AZ-A</p>" > "$WEB_ROOT"/index.html
+          fi
+
+          # Remove cloned repo (don't leave source code on disk)
+          rm -rf "$CLONE_DIR"
+          systemctl restart nginx
+
           # Install SSM Agent
           dnf install -y amazon-ssm-agent
           systemctl enable amazon-ssm-agent
@@ -413,12 +450,49 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update and Install Nginx
+          # Update and Install Nginx + Git + jq
           dnf update -y
-          dnf install -y nginx
+          dnf install -y nginx git jq
           systemctl enable nginx
           systemctl start nginx
-          echo "Hello from $(hostname -f) in AZ-B" > /usr/share/nginx/html/index.html
+
+          # Retrieve GitHub PAT from Secrets Manager
+          GITHUB_TOKEN=$(aws secretsmanager get-secret-value \
+            --secret-id lab-github-token \
+            --region ${AWS::Region} \
+            --query SecretString \
+            --output text | jq -r .token)
+
+          # Deploy website from private GitHub repo
+          REPO_URL="https://${!GITHUB_TOKEN}@github.com/ms-solutions-app/edu-app.git"
+          CLONE_DIR="/tmp/edu-app"
+          WEB_ROOT="/usr/share/nginx/html"
+
+          git clone "$REPO_URL" "$CLONE_DIR"
+
+          if [ $? -eq 0 ]; then
+            # Find the directory containing index.html (handles repos with a subfolder)
+            HTML_DIR=$(find "$CLONE_DIR" -name "index.html" -not -path "*/node_modules/*" | head -1 | xargs dirname)
+            if [ -n "$HTML_DIR" ]; then
+              rm -rf "$WEB_ROOT"/*
+              cp -r "$HTML_DIR"/* "$WEB_ROOT"/
+              chown -R nginx:nginx "$WEB_ROOT"
+
+              # Inject AZ/IP identification banner into index.html
+              PRIVATE_IP=$(hostname -I | awk '{print $1}')
+              BANNER='<div style="position:fixed;bottom:16px;right:16px;background:rgba(0,0,0,0.75);color:#fff;font-family:monospace;font-size:13px;padding:10px 16px;border-radius:8px;z-index:9999;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.15)">&#128994; Served by: <strong>'"$PRIVATE_IP"'</strong> &nbsp;|&nbsp; AZ: <strong>AZ-B</strong></div>'
+              sed -i "s|</body>|$BANNER</body>|I" "$WEB_ROOT"/index.html
+            else
+              echo "<h1>Deploy Error: index.html not found in repo</h1><p>Instance: $(hostname -f) | AZ-B</p>" > "$WEB_ROOT"/index.html
+            fi
+          else
+            echo "<h1>Deploy Error: Failed to clone repo</h1><p>Instance: $(hostname -f) | AZ-B</p>" > "$WEB_ROOT"/index.html
+          fi
+
+          # Remove cloned repo (don't leave source code on disk)
+          rm -rf "$CLONE_DIR"
+          systemctl restart nginx
+
           # Install SSM Agent
           dnf install -y amazon-ssm-agent
           systemctl enable amazon-ssm-agent
@@ -519,6 +593,9 @@ Resources:
         GenerateStringKey: "password"
         PasswordLength: 16
         ExcludeCharacters: '"@/\'
+
+  # GitHub PAT secret must be pre-created by the operator:
+  # aws secretsmanager create-secret --name "lab-github-token" --secret-string '{"token":"<YOUR_PAT>"}'
 
   DBInstance:
     Type: AWS::RDS::DBInstance
@@ -638,6 +715,10 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref DBSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:lab-github-token*"
 
   AppInstanceProfile:
     Type: AWS::IAM::InstanceProfile

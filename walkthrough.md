@@ -47,7 +47,23 @@ aws cloudformation describe-stacks --stack-name lab-onprem --query "Stacks[0].Ou
 ## 2. Deploy the Lab Network (VPN Side)
 *Goal: Provision the AWS environment with a full 3-tier application stack and VPN gateway.*
 
-This stack deploys the main VPC (`10.10.0.0/16`), Subnets, ALB, App instances, and a Postgres RDS database.
+This stack deploys the main VPC (`10.10.0.0/16`), Subnets, ALB, App instances, and a Postgres RDS database. The app instances will pull your website from a private GitHub repo at boot time.
+
+**Prerequisite — Store your GitHub PAT in Secrets Manager:**
+The EC2 instances retrieve this secret automatically on first boot. You must create it *before* launching the stack.
+
+1. Go to [GitHub → Settings → Developer Settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens/new)
+2. Create a token with only the ✅ `repo` scope
+3. Run this command (replace the token value):
+
+```powershell
+aws secretsmanager create-secret `
+  --name "lab-github-token" `
+  --secret-string '{"token":"ghp_YOUR_PAT_HERE"}'
+```
+
+> [!IMPORTANT]
+> This secret must exist **before** you run the `create-stack` command below. The instances read it at first boot to clone the website repo.
 
 **Command (PowerShell):**
 *Replace `34.200.235.113` with the IP you copied above and `your-key-pair` with your key name.*
@@ -120,7 +136,8 @@ Wait until it returns **`CREATE_COMPLETE`** before proceeding.
     ```
 
     **Success Criteria:**
-    - You see `Hello from ip-10-10-x-x... in AZ-A` then `AZ-B` in your browser.
+    - You see your website with a 🟢 **"Served by: `10.10.x.x` | AZ: `AZ-A`"** badge in the bottom-right corner.
+    - Refreshing the browser switches the badge to **AZ-B** (different IP), confirming the ALB is load balancing across both Availability Zones.
     - You successfully log into the database via SSM and see the `postgres=>` prompt.
 
 ## 4. Configure the VPN Connection (Manual Steps)
@@ -296,9 +313,16 @@ Based on the implementation of this lab, here are several "Production-Ready" rec
 4.  **Logging & Visibility:** Ensure **VPC Flow Logs** are active to audit all traffic crossing your hybrid boundary (Site-to-Site VPN).
 
 ## 7. Cleanup
-*Goal: Remove resources to stop billing.*
+*Goal: Remove all resources to stop billing.*
 
 ```powershell
+# Delete the CloudFormation stacks (this removes EC2, RDS, VPN, ALB, etc.)
 aws cloudformation delete-stack --stack-name lab-network
 aws cloudformation delete-stack --stack-name lab-onprem
+
+# Delete the GitHub PAT secret from Secrets Manager
+aws secretsmanager delete-secret --secret-id lab-github-token --force-delete-without-recovery
 ```
+
+> [!NOTE]
+> Stack deletion order matters — `lab-network` and `lab-onprem` can be deleted in parallel. The `lab-db-secret` (RDS password) is deleted automatically with the `lab-network` stack. The `lab-github-token` secret is standalone and must be deleted separately with the command above.
